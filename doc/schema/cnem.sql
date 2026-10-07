@@ -126,17 +126,21 @@ CREATE TABLE IF NOT EXISTS t_cnem_job (
 CREATE TABLE IF NOT EXISTS t_cnem_job_row (
   id bigint NOT NULL COMMENT '主键',
   job_no varchar(32) DEFAULT NULL COMMENT '作业编号',
-  row_no int DEFAULT NULL COMMENT '行次',
+  row_no int DEFAULT NULL COMMENT '行次(系统从上往下排,报送人不得挪)',
   insp_no varchar(64) DEFAULT NULL COMMENT '检验编号',
+  item_code varchar(64) DEFAULT NULL COMMENT '设备编号',
+  unit_name varchar(128) DEFAULT NULL COMMENT '使用单位',
+  qty decimal(14,2) DEFAULT NULL COMMENT '本轮累计运行小时数(定级输入)',
+  rule_id bigint DEFAULT NULL COMMENT '本行所指检验判据主键(每台指着一条)',
   amount decimal(14,2) DEFAULT NULL COMMENT '金额',
   job_qty int DEFAULT NULL COMMENT '数量',
-  version varchar(32) DEFAULT NULL COMMENT '判据版本',
+  version varchar(32) DEFAULT NULL COMMENT '判据版本(老数据可空)',
   version_status int DEFAULT NULL COMMENT '版本状态(1生效中 0未生效)',
   writeback_flag int DEFAULT NULL COMMENT '是否已写回(0否1是)',
   compensate_flag int DEFAULT NULL COMMENT '补偿流水标记(0否1是)',
   compensated int DEFAULT NULL COMMENT '是否已补偿(0否1是)',
-  fail_reason varchar(255) DEFAULT NULL COMMENT '失败原因',
-  status int DEFAULT NULL COMMENT '行状态',
+  fail_reason varchar(255) DEFAULT NULL COMMENT '失败原因(没做成的留在册上写明)',
+  status int DEFAULT NULL COMMENT '行状态(1待审 3做完 4没做成 6已收回)',
   del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
   create_by varchar(64) DEFAULT NULL COMMENT '创建者',
   create_time datetime DEFAULT NULL COMMENT '创建时间',
@@ -182,6 +186,81 @@ CREATE TABLE IF NOT EXISTS t_cnem_trace_row (
   remark varchar(500) DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='隐患整改处置条目';
+
+-- ===== 本轮（chen-033 作业生命周期口径）新增 =====
+-- 口径总则：
+--   1) 作业号由系统排给，同作业号在册只占一个作业头（row_no=0）+ 若干作业行（row_no=1..N），
+--      行次由系统从上往下排；重复提交不另立新行（uk_job_row 兜底）。
+--   2) 三段顺序：报（待审1）→ 做（生效中2）→ 收（回滚中5），由 CAS 更新状态防跳段/防并发覆写。
+--   3) 「做」一台四处同时刻落定：作业行状态、检验台账、收费流水、操作留痕，逐行独立事务。
+--   4) 「收」不删台账，补冲账流水；同一台冲账流水只准一道（uk 兜底）。
+
+-- 检验结论台账：「出结论」时每台落一条；回滚不删，以 status 标收回
+CREATE TABLE IF NOT EXISTS t_cnem_insp_ledger (
+  id bigint NOT NULL COMMENT '主键',
+  job_no varchar(32) NOT NULL COMMENT '作业编号',
+  row_no int NOT NULL COMMENT '行次',
+  insp_no varchar(64) DEFAULT NULL COMMENT '检验编号(老数据可空)',
+  item_code varchar(64) DEFAULT NULL COMMENT '设备编号',
+  unit_name varchar(128) DEFAULT NULL COMMENT '使用单位',
+  grade_level int DEFAULT NULL COMMENT '结论等级(老数据可空,1免检2一般3监督4其他)',
+  rule_id bigint DEFAULT NULL COMMENT '所依据检验判据主键',
+  version varchar(32) DEFAULT NULL COMMENT '判据版本(老数据可空)',
+  amount decimal(14,2) DEFAULT NULL COMMENT '金额',
+  status int DEFAULT NULL COMMENT '台账状态 0在档 1已冲账收回',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_ledger_job_row (job_no, row_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='检验结论台账';
+
+-- 收费流水：生效落正账一笔，收回落冲账一笔（同一台冲账只准一道）
+CREATE TABLE IF NOT EXISTS t_cnem_fee_flow (
+  id bigint NOT NULL COMMENT '主键',
+  job_no varchar(32) NOT NULL COMMENT '作业编号',
+  row_no int NOT NULL COMMENT '行次',
+  insp_no varchar(64) DEFAULT NULL COMMENT '检验编号',
+  item_no varchar(64) DEFAULT NULL COMMENT '收费条目编号',
+  amount decimal(14,2) DEFAULT NULL COMMENT '金额(冲账为负值)',
+  flow_type int DEFAULT NULL COMMENT '流水类型 1正账(生效) 2冲账(收回)',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_fee_flow_row (job_no, row_no, flow_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='检验费收费流水';
+
+-- 操作留痕：谁、什么时候、把哪一台从什么状态推到什么状态，可倒查
+CREATE TABLE IF NOT EXISTS t_cnem_job_oplog (
+  id bigint NOT NULL COMMENT '主键',
+  job_no varchar(32) NOT NULL COMMENT '作业编号',
+  row_no int DEFAULT NULL COMMENT '行次(作业头操作为0)',
+  stage varchar(16) DEFAULT NULL COMMENT '环节 submit/effect/rollback',
+  action varchar(32) DEFAULT NULL COMMENT '动作',
+  from_status int DEFAULT NULL COMMENT '动前状态',
+  to_status int DEFAULT NULL COMMENT '动后状态',
+  operator varchar(64) DEFAULT NULL COMMENT '操作人',
+  op_time datetime DEFAULT NULL COMMENT '操作时刻',
+  note varchar(500) DEFAULT NULL COMMENT '附记(失败原因等)',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
+  PRIMARY KEY (id),
+  KEY idx_oplog_job (job_no, op_time, row_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='检验作业操作留痕';
+
+-- 作业头/行幂等键：同作业号头只一个、同行次只一行（重复提交不另立）
+-- 以下三条为存量库升级口径，仅在首次升级时执行一次（重复执行报键已存在属正常）；
+-- 加唯一键前先按 (job_no,row_no) 查重，存量重复行先并账去重，否则 ALTER 会被旧脏数据挡住。
+ALTER TABLE t_cnem_job ADD UNIQUE KEY uk_job_head (job_no, row_no);
+ALTER TABLE t_cnem_job_row ADD UNIQUE KEY uk_job_row (job_no, row_no);
+-- 回滚时按作业号反查台账/流水
+ALTER TABLE t_cnem_job_row ADD KEY idx_job_row_job (job_no);
 
 -- 初始档案数据（id=1 启用 / id=2 停用）
 -- 三张判定/档案表的种子数据。id=1 为在用行、id=2 为撤下行，

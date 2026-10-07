@@ -47,6 +47,26 @@ public class TCnemJobRow implements Serializable {
     @ApiModelProperty(value = "检验编号")
     private String inspNo;
 
+    /** 设备编号 */
+    @TableField("item_code")
+    @ApiModelProperty(value = "设备编号")
+    private String itemCode;
+
+    /** 使用单位 */
+    @TableField("unit_name")
+    @ApiModelProperty(value = "使用单位")
+    private String unitName;
+
+    /** 本轮累计运行小时数(定级输入) */
+    @TableField("qty")
+    @ApiModelProperty(value = "本轮累计运行小时数(定级输入)")
+    private BigDecimal qty;
+
+    /** 本行所指检验判据主键(每台指着一条) */
+    @TableField("rule_id")
+    @ApiModelProperty(value = "本行所指检验判据主键(每台指着一条)")
+    private Long ruleId;
+
     /** 金额 */
     @TableField("amount")
     @ApiModelProperty(value = "金额")
@@ -154,6 +174,38 @@ public class TCnemJobRow implements Serializable {
 
     public void setInspNo(String inspNo) {
         this.inspNo = inspNo;
+    }
+
+    public String getItemCode() {
+        return itemCode;
+    }
+
+    public void setItemCode(String itemCode) {
+        this.itemCode = itemCode;
+    }
+
+    public String getUnitName() {
+        return unitName;
+    }
+
+    public void setUnitName(String unitName) {
+        this.unitName = unitName;
+    }
+
+    public BigDecimal getQty() {
+        return qty;
+    }
+
+    public void setQty(BigDecimal qty) {
+        this.qty = qty;
+    }
+
+    public Long getRuleId() {
+        return ruleId;
+    }
+
+    public void setRuleId(Long ruleId) {
+        this.ruleId = ruleId;
     }
 
     public BigDecimal getAmount() {

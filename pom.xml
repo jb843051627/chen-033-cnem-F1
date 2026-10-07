@@ -80,6 +80,13 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- H2 内存库：作业生命周期集成测试 -->
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<version>2.1.214</version>
+			<scope>test</scope>
+		</dependency>
 		<!-- knife4j -->
 		<dependency>
 		    <groupId>com.github.xiaoymin</groupId>

@@ -129,6 +129,26 @@ public class TCnemJob implements Serializable {
     @ApiModelProperty(value = "失败原因")
     private String failReason;
 
+    /** 设备编号（报送行上的带入字段，作业头表不落，转落作业行） */
+    @TableField(value = "item_code", exist = false)
+    @ApiModelProperty(value = "设备编号(报送行带入)")
+    private String itemCode;
+
+    /** 使用单位（报送行上的带入字段，作业头表不落，转落作业行） */
+    @TableField(value = "unit_name", exist = false)
+    @ApiModelProperty(value = "使用单位(报送行带入)")
+    private String unitName;
+
+    /** 本轮累计运行小时数（定级输入，作业头表不落，转落作业行） */
+    @TableField(value = "qty", exist = false)
+    @ApiModelProperty(value = "本轮累计运行小时数(定级输入)")
+    private BigDecimal qty;
+
+    /** 本行所指检验判据主键（作业头表不落，转落作业行） */
+    @TableField(value = "rule_id", exist = false)
+    @ApiModelProperty(value = "本行所指检验判据主键")
+    private Long ruleId;
+
     /** 删除标记 0正常 1删除 */
     @TableField("del_flag")
     @ApiModelProperty(value = "删除标记 0正常 1删除")
@@ -367,5 +387,37 @@ public class TCnemJob implements Serializable {
 
     public void setRemark(String remark) {
         this.remark = remark;
+    }
+
+    public String getItemCode() {
+        return itemCode;
+    }
+
+    public void setItemCode(String itemCode) {
+        this.itemCode = itemCode;
+    }
+
+    public String getUnitName() {
+        return unitName;
+    }
+
+    public void setUnitName(String unitName) {
+        this.unitName = unitName;
+    }
+
+    public BigDecimal getQty() {
+        return qty;
+    }
+
+    public void setQty(BigDecimal qty) {
+        this.qty = qty;
+    }
+
+    public Long getRuleId() {
+        return ruleId;
+    }
+
+    public void setRuleId(Long ruleId) {
+        this.ruleId = ruleId;
     }
 }
