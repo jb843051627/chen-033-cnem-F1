@@ -62,6 +62,16 @@ public class TCnemJobRow implements Serializable {
     @ApiModelProperty(value = "判据版本")
     private String version;
 
+    /** 本行所指检验判据主键 */
+    @TableField("rule_id")
+    @ApiModelProperty(value = "本行所指检验判据主键")
+    private Long ruleId;
+
+    /** 检验结论等级 1..4(老行可空,按缺项口径接着走) */
+    @TableField("result_level")
+    @ApiModelProperty(value = "检验结论等级 1..4")
+    private Integer resultLevel;
+
     /** 版本状态(1生效中 0未生效) */
     @TableField("version_status")
     @ApiModelProperty(value = "版本状态(1生效中 0未生效)")
@@ -81,6 +91,11 @@ public class TCnemJobRow implements Serializable {
     @TableField("compensated")
     @ApiModelProperty(value = "是否已补偿(0否1是)")
     private Integer compensated;
+
+    /** 补偿累计次数(冲账至多一道,恒 0/1) */
+    @TableField("compensate_cnt")
+    @ApiModelProperty(value = "补偿累计次数")
+    private Integer compensateCnt;
 
     /** 失败原因 */
     @TableField("fail_reason")
@@ -180,6 +195,22 @@ public class TCnemJobRow implements Serializable {
         this.version = version;
     }
 
+    public Long getRuleId() {
+        return ruleId;
+    }
+
+    public void setRuleId(Long ruleId) {
+        this.ruleId = ruleId;
+    }
+
+    public Integer getResultLevel() {
+        return resultLevel;
+    }
+
+    public void setResultLevel(Integer resultLevel) {
+        this.resultLevel = resultLevel;
+    }
+
     public Integer getVersionStatus() {
         return versionStatus;
     }
@@ -210,6 +241,14 @@ public class TCnemJobRow implements Serializable {
 
     public void setCompensated(Integer compensated) {
         this.compensated = compensated;
+    }
+
+    public Integer getCompensateCnt() {
+        return compensateCnt;
+    }
+
+    public void setCompensateCnt(Integer compensateCnt) {
+        this.compensateCnt = compensateCnt;
     }
 
     public String getFailReason() {

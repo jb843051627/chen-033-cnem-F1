@@ -120,31 +120,58 @@ CREATE TABLE IF NOT EXISTS t_cnem_job (
   update_by varchar(64) DEFAULT NULL COMMENT '更新者',
   update_time datetime DEFAULT NULL COMMENT '更新时间',
   remark varchar(500) DEFAULT NULL COMMENT '备注',
-  PRIMARY KEY (id)
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_job_no (job_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='检验结论作业';
 
 CREATE TABLE IF NOT EXISTS t_cnem_job_row (
   id bigint NOT NULL COMMENT '主键',
   job_no varchar(32) DEFAULT NULL COMMENT '作业编号',
-  row_no int DEFAULT NULL COMMENT '行次',
+  row_no int DEFAULT NULL COMMENT '行次(系统由上往下排,不可挪)',
   insp_no varchar(64) DEFAULT NULL COMMENT '检验编号',
   amount decimal(14,2) DEFAULT NULL COMMENT '金额',
   job_qty int DEFAULT NULL COMMENT '数量',
-  version varchar(32) DEFAULT NULL COMMENT '判据版本',
+  version varchar(32) DEFAULT NULL COMMENT '判据版本(老行可空,按缺项口径接着走)',
+  rule_id bigint DEFAULT NULL COMMENT '本行所指检验判据主键',
+  result_level int DEFAULT NULL COMMENT '检验结论等级 1..4(老行可空,按缺项口径接着走)',
   version_status int DEFAULT NULL COMMENT '版本状态(1生效中 0未生效)',
   writeback_flag int DEFAULT NULL COMMENT '是否已写回(0否1是)',
   compensate_flag int DEFAULT NULL COMMENT '补偿流水标记(0否1是)',
-  compensated int DEFAULT NULL COMMENT '是否已补偿(0否1是)',
-  fail_reason varchar(255) DEFAULT NULL COMMENT '失败原因',
-  status int DEFAULT NULL COMMENT '行状态',
+  compensated int DEFAULT NULL COMMENT '是否已补偿(0否1是,冲账流水幂等键)',
+  compensate_cnt int DEFAULT NULL COMMENT '补偿累计次数(冲账至多一道,恒 0/1)',
+  fail_reason varchar(255) DEFAULT NULL COMMENT '失败原因(没做成写明,不推翻整批)',
+  status int DEFAULT NULL COMMENT '行状态 0待做 1已做成 2没做成 3已冲回',
   del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
   create_by varchar(64) DEFAULT NULL COMMENT '创建者',
   create_time datetime DEFAULT NULL COMMENT '创建时间',
   update_by varchar(64) DEFAULT NULL COMMENT '更新者',
   update_time datetime DEFAULT NULL COMMENT '更新时间',
   remark varchar(500) DEFAULT NULL COMMENT '备注',
-  PRIMARY KEY (id)
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_job_row (job_no, row_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='检验作业行';
+
+-- 作业台账:生效/冲回逐行追加,只补不删;同刻同动作幂等键 uk_row_action 防重复落账
+CREATE TABLE IF NOT EXISTS t_cnem_job_ledger (
+  id bigint NOT NULL COMMENT '主键',
+  job_no varchar(32) DEFAULT NULL COMMENT '作业编号',
+  row_no int DEFAULT NULL COMMENT '行次',
+  action int DEFAULT NULL COMMENT '动作 1生效落账 2冲回冲账',
+  insp_no varchar(64) DEFAULT NULL COMMENT '检验编号',
+  result_level int DEFAULT NULL COMMENT '检验结论等级',
+  amount decimal(14,2) DEFAULT NULL COMMENT '金额(冲账为负向记录的正向绝对值)',
+  fee_row_id bigint DEFAULT NULL COMMENT '对应收费流水条目主键',
+  oper_by varchar(64) DEFAULT NULL COMMENT '动的人',
+  oper_at datetime DEFAULT NULL COMMENT '动的时刻',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_row_action (job_no, row_no, action)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='检验作业台账(生效/冲账流水)';
 
 CREATE TABLE IF NOT EXISTS t_cnem_reg_rule (
   id bigint NOT NULL COMMENT '主键',

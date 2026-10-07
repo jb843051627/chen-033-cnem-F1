@@ -23,6 +23,13 @@ public interface ITCnemInspRuleService {
      */
     int evaluate(String ruleCode, BigDecimal input, Date at);
 
+    /**
+     * 按判据主键判档（作业行各指一条判据的入口）。
+     * 判据册上没有 / 已撤下 / 已过期一律返回 0（调用方按「判据这边出了状况」记行失败）；
+     * input 为 null（老行缺项）时不判档，调用方可按缺项口径放行并留空等级。
+     */
+    int evaluateById(Long ruleId, BigDecimal input, Date at);
+
     /** 多规则求值：at 时刻可用规则中优先级最高者的档位；无可用规则返回 0 */
     int evaluateTop(BigDecimal input, Date at);
 

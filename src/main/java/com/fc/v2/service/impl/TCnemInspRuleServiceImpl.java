@@ -1,6 +1,8 @@
 package com.fc.v2.service.impl;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
@@ -14,6 +16,9 @@ import com.fc.v2.service.ITCnemInspRuleService;
 
 /**
  * 检验结论判定规则 Service业务层处理（rule-eval 形状）
+ *
+ * 口径（册上说法）：判据撤下(status=1)、过期(eff_end 不含已过)、册上没有，都不认；
+ * 几条同时适用时，优先级(priority)降序、ruleCode 降序取头一条。
  *
  * @author fuce
  * @date 2026-09-14
@@ -39,15 +44,6 @@ public class TCnemInspRuleServiceImpl implements ITCnemInspRuleService {
     @javax.annotation.Resource
     private TCnemInspRuleMapper cnemInspRuleMapper;
 
-    /**
-     * 时段比较统一走**墙钟字符串**（yyyy-MM-dd HH:mm:ss）+ 字符串绑定：
-     * JDBC 的 serverTimezone 与本机时区不对称，直接把 java.util.Date 作参数会整体偏移，
-     * 使边界判定在"切换当日"这类用例上随机错档（实测踩到）。
-     */
-    private static String ts(Date d) {
-        return new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(d);
-    }
-
     @Override
     public TCnemInspRule selectTCnemInspRuleById(Long id) {
         return this.cnemInspRuleMapper.selectById(id);
@@ -56,9 +52,19 @@ public class TCnemInspRuleServiceImpl implements ITCnemInspRuleService {
     @Override
     public List<TCnemInspRule> listAvailable(Date at) {
         if (at == null) {
-            return new java.util.ArrayList<TCnemInspRule>();
+            return new ArrayList<TCnemInspRule>();
         }
-        return this.cnemInspRuleMapper.selectList(new QueryWrapper<TCnemInspRule>().eq("del_flag", 0));
+        // 时段过滤放 Java 侧：JDBC serverTimezone 与本机不对称，Date 直接作绑定参数会整体错档
+        List<TCnemInspRule> all = this.cnemInspRuleMapper.selectList(
+                new QueryWrapper<TCnemInspRule>().eq("del_flag", 0));
+        List<TCnemInspRule> avail = new ArrayList<TCnemInspRule>();
+        for (TCnemInspRule r : all) {
+            if (inForce(r, at)) {
+                avail.add(r);
+            }
+        }
+        Collections.sort(avail, PRIORITY_THEN_CODE_DESC);
+        return avail;
     }
 
     @Override
@@ -66,24 +72,44 @@ public class TCnemInspRuleServiceImpl implements ITCnemInspRuleService {
         if (ruleCode == null || ruleCode.trim().isEmpty() || input == null || at == null) {
             return 0;
         }
-        TCnemInspRule rule = findRule(ruleCode, at);
-        return levelOf(rule, input);
+        if (input.compareTo(BigDecimal.ZERO) < 0) {
+            return 0;
+        }
+        for (TCnemInspRule r : listAvailable(at)) {
+            if (ruleCode.trim().equals(r.getRuleCode())) {
+                return levelOf(r, input);
+            }
+        }
+        // 撤下/过期/册上没有 → 0（调用方按「判据这边出了状况」记）
+        return 0;
     }
 
     @Override
     public int evaluateTop(BigDecimal input, Date at) {
-        if (input == null || at == null) {
-            return 0;
-        }
-        if (input.compareTo(BigDecimal.ZERO) < 0
-                || input.compareTo(new BigDecimal("100")) > 0) {
+        if (input == null || at == null || input.compareTo(BigDecimal.ZERO) < 0) {
             return 0;
         }
         List<TCnemInspRule> avail = listAvailable(at);
         if (avail.isEmpty()) {
             return 0;
         }
+        // 几条同时适用：listAvailable 已按优先级降序、ruleCode 降序排定，取头一条
         return levelOf(avail.get(0), input);
+    }
+
+    @Override
+    public int evaluateById(Long ruleId, BigDecimal input, Date at) {
+        if (ruleId == null || input == null || at == null) {
+            return 0;
+        }
+        if (input.compareTo(BigDecimal.ZERO) < 0) {
+            return 0;
+        }
+        TCnemInspRule r = this.cnemInspRuleMapper.selectById(ruleId);
+        if (!inForce(r, at)) {
+            return 0;
+        }
+        return levelOf(r, input);
     }
 
     @Override
@@ -92,7 +118,7 @@ public class TCnemInspRuleServiceImpl implements ITCnemInspRuleService {
             return false;
         }
         TCnemInspRule r = this.cnemInspRuleMapper.selectById(id);
-        return r != null;
+        return inForce(r, at);
     }
 
     @Override
@@ -100,38 +126,27 @@ public class TCnemInspRuleServiceImpl implements ITCnemInspRuleService {
         if (at == null) {
             return 0;
         }
-        return this.cnemInspRuleMapper
-                .selectList(new QueryWrapper<TCnemInspRule>().eq("del_flag", 0)).size();
+        return listAvailable(at).size();
     }
 
-    private TCnemInspRule findRule(String ruleCode, Date at) {
-        List<TCnemInspRule> hit = this.cnemInspRuleMapper.selectList(new QueryWrapper<TCnemInspRule>()
-                .eq("del_flag", 0).eq("rule_code", ruleCode));
-        TCnemInspRule newest = null;
-        for (TCnemInspRule r : hit) {
-            if (newest == null || r.getEffEnd() == null) {
-                newest = r;
-            } else if (newest.getEffEnd() != null && r.getEffEnd().after(newest.getEffEnd())) {
-                newest = r;
-            }
+    /** 在册在用：未删、未撤下、在 [eff_start, eff_end) 窗口内；边界空端不限 */
+    private static boolean inForce(TCnemInspRule r, Date at) {
+        if (r == null) {
+            return false;
         }
-        return newest;
-    }
-
-    /** 阈值解析：档案为主、明细覆盖；两者皆缺返回 null（调用方按不可用处理），精度统一 2 位 */
-    private BigDecimal resolveLimit(TCnemInspRule r, int tier) {
-        if (tier == 1) {
-            return r.getTh1Max();
+        if (r.getDelFlag() != null && r.getDelFlag().intValue() != 0) {
+            return false;
         }
-        if (tier == 2) {
-            return r.getTh2Max();
+        if (r.getStatus() != null && r.getStatus().intValue() == 1) {
+            return false;
         }
-        return r.getTh3Max();
-    }
-
-    /** 档案级默认阈值（明细未维护时的回退来源） */
-    private BigDecimal defaultThreshold(TCnemInspRule r, int tier) {
-        return r.getTh1Max();
+        if (r.getEffStart() != null && at.before(r.getEffStart())) {
+            return false;
+        }
+        if (r.getEffEnd() != null && !at.before(r.getEffEnd())) {
+            return false;
+        }
+        return true;
     }
 
     /** 分档：等于上限取高一档 */
